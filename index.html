@@ -542,8 +542,7 @@ function bookCard(id, b, i){
   card.append(coverNode(b.coverUrl, b.title));
   const meta = el("div",{class:"meta"},[
     el("div",{class:"t"}, b.title || "Sans titre"),
-    b.author ? el("div",{class:"a"}, b.author) : null,
-    el("div",{class:"c"}, "Avis des Servolecteur·rices →")
+    b.author ? el("div",{class:"a"}, b.author) : null
   ]);
   card.append(meta);
   return card;
