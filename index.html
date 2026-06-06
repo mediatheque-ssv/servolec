@@ -218,6 +218,21 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 .comment .del{ margin-left:auto; }
 .empty-note{ color:var(--ink-faint); font-size:15.5px; }
 
+/* notation par étoiles */
+.stars{ display:inline-flex; gap:2px; line-height:1; }
+.stars .star{ color:var(--line); }
+.stars .star.on{ color:var(--accent); }
+.rating-summary{ align-items:center; gap:11px; margin:14px 0 0; }
+.rating-summary .stars{ font-size:19px; }
+.rating-summary .avg-num{ font-weight:700; font-size:15px; }
+.rating-summary .avg-cnt{ color:var(--ink-faint); font-size:13.5px; }
+.comment-stars{ margin:1px 0 7px; }
+.comment-stars .stars{ font-size:15px; }
+.star-picker{ display:inline-flex; gap:5px; font-size:27px; line-height:1; cursor:pointer; user-select:none; }
+.star-picker .star{ color:var(--line); transition:color .12s ease, transform .12s ease; }
+.star-picker .star.on{ color:var(--accent); }
+.star-picker .star:hover{ transform:scale(1.14); }
+
 /* formulaire commentaire */
 .cform{ margin-top:32px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:22px; box-shadow:var(--shadow-sm); }
 .cform h3{ font-family:var(--display); font-weight:540; font-size:19px; margin:0 0 16px; }
@@ -351,6 +366,11 @@ const fmtDate = ts => {
   if (!ts || !ts.toDate) return "à l'instant";
   return new Intl.DateTimeFormat("fr-FR",{ day:"numeric", month:"long", year:"numeric", hour:"2-digit", minute:"2-digit" }).format(ts.toDate());
 };
+function starsNode(value){
+  const wrap = el("span",{class:"stars"});
+  for (let i = 1; i <= 5; i++) wrap.append(el("span",{class:"star"+(i <= value ? " on" : "")},"♥"));
+  return wrap;
+}
 let toastTimer;
 function toast(msg){
   const t = document.getElementById("toast");
@@ -523,7 +543,7 @@ function bookCard(id, b, i){
   const meta = el("div",{class:"meta"},[
     el("div",{class:"t"}, b.title || "Sans titre"),
     b.author ? el("div",{class:"a"}, b.author) : null,
-    el("div",{class:"c"}, "Avis des Servolecteur·rices →")
+    el("div",{class:"c"}, "Lire & commenter →")
   ]);
   card.append(meta);
   return card;
@@ -591,6 +611,7 @@ function buildInfo(infoCol, id, b){
     el("span",{},"Les avis du groupe"),
     el("span",{class:"count", id:"cCount"},"")
   ]));
+  infoCol.append(el("div",{class:"rating-summary", id:"cAvg", style:"display:none"}));
   infoCol.append(el("div",{class:"divider"}));
   infoCol.append(renderBook._cwrap);
   infoCol.append(commentForm(id));
@@ -600,6 +621,24 @@ function renderComments(wrap, bookId, snap){
   wrap.innerHTML = "";
   const cnt = document.getElementById("cCount");
   if (cnt) cnt.textContent = snap.size ? `· ${snap.size} avis` : "";
+
+  let sum = 0, nRatings = 0;
+  snap.forEach(d => { const r = d.data().rating; if (r > 0){ sum += r; nRatings++; } });
+  const avgEl = document.getElementById("cAvg");
+  if (avgEl){
+    if (nRatings){
+      const avg = sum / nRatings;
+      avgEl.innerHTML = "";
+      avgEl.append(
+        starsNode(Math.round(avg)),
+        el("span",{class:"avg-num"}, avg.toFixed(1).replace(".",",") + " / 5"),
+        el("span",{class:"avg-cnt"}, ` · ${nRatings} note${nRatings>1?"s":""}`)
+      );
+      avgEl.style.display = "flex";
+    } else {
+      avgEl.style.display = "none";
+    }
+  }
 
   if (snap.empty){
     wrap.append(el("p",{class:"empty-note"},"Aucun avis pour l'instant. Ouvrez le bal !"));
@@ -616,7 +655,10 @@ function renderComments(wrap, bookId, snap){
     if (mine || isAdmin){
       head.append(el("button",{class:"btn tiny ghost del", onclick:()=>removeComment(bookId, d.id)},"supprimer"));
     }
-    row.append(head, el("div",{class:"text"}, c.text || ""));
+    if (c.rating > 0)
+      row.append(head, el("div",{class:"comment-stars"}, starsNode(c.rating)), el("div",{class:"text"}, c.text || ""));
+    else
+      row.append(head, el("div",{class:"text"}, c.text || ""));
     wrap.append(row);
   });
 }
@@ -629,8 +671,23 @@ function commentForm(bookId){
   const nameI = el("input",{type:"text", maxlength:"40", placeholder:"Votre nom", value:savedName});
   const textI = el("textarea",{maxlength:"2000", placeholder:"Qu'avez-vous pensé de ce livre ?"});
 
+  // sélecteur d'étoiles
+  let rating = 0;
+  const stars = [];
+  const picker = el("div",{class:"star-picker"});
+  for (let i = 1; i <= 5; i++){
+    const s = el("span",{class:"star", title:i+"/5",
+      onmouseenter:()=>paint(i),
+      onclick:()=>{ rating = (rating === i ? 0 : i); paint(rating); }
+    },"♥");
+    stars.push(s); picker.append(s);
+  }
+  picker.addEventListener("mouseleave", ()=>paint(rating));
+  function paint(v){ stars.forEach((s,idx)=>s.classList.toggle("on", idx < v)); }
+
   form.append(
     el("div",{class:"field"},[el("label",{},"Nom"), nameI]),
+    el("div",{class:"field"},[el("label",{},"Note (facultatif)"), picker]),
     el("div",{class:"field"},[el("label",{},"Commentaire"), textI]),
     el("div",{class:"row"},[
       el("span",{class:"hint"},"Visible par tout le groupe Servolec."),
@@ -650,10 +707,11 @@ function commentForm(bookId){
       await addDoc(collection(db,"books",bookId,"comments"),{
         name: name || "Anonyme",
         text,
+        rating,
         uid: me.uid,
         createdAt: serverTimestamp()
       });
-      textI.value = "";
+      textI.value = ""; rating = 0; paint(0);
       toast("Avis publié.");
     }catch(e){
       console.error(e); toast("Échec de la publication.");
