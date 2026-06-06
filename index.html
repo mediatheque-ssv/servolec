@@ -543,7 +543,7 @@ function bookCard(id, b, i){
   const meta = el("div",{class:"meta"},[
     el("div",{class:"t"}, b.title || "Sans titre"),
     b.author ? el("div",{class:"a"}, b.author) : null,
-    el("div",{class:"c"}, "Lire & commenter →")
+    el("div",{class:"c"}, "Avis des Servolecteur·rices →")
   ]);
   card.append(meta);
   return card;
