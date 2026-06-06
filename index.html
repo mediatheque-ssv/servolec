@@ -223,12 +223,13 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 .cform h3{ font-family:var(--display); font-weight:540; font-size:19px; margin:0 0 16px; }
 .field{ margin-bottom:14px; }
 .field label{ display:block; font-size:12.5px; font-weight:600; letter-spacing:.04em; color:var(--ink-soft); margin-bottom:6px; }
-input[type=text], textarea{
+input[type=text], input[type=password], textarea{
   width:100%; font-family:var(--sans); font-size:15.5px; color:var(--ink);
   background:#fffdfa; border:1px solid var(--line); border-radius:var(--radius-sm); padding:11px 13px;
   transition:border-color .15s ease, box-shadow .15s ease;
 }
-input[type=text]:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(192,86,59,.15); }
+input[type=text]:focus, input[type=password]:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(192,86,59,.15); }
+.login-err{ color:var(--accent-deep); font-size:13.5px; font-weight:600; min-height:18px; margin-top:2px; }
 textarea{ resize:vertical; min-height:104px; line-height:1.55; }
 .cform .row{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
 .cform .hint{ font-size:13px; color:var(--ink-faint); }
@@ -301,6 +302,10 @@ const firebaseConfig = {
   appId:             "1:146804561580:web:bf86dab4dfe5eab3cd3109"
 };
 
+/* ↓↓↓  Mets ici l'adresse e-mail (l'identifiant) de l'administrateur.  ↓↓↓
+   C'est la SEULE adresse autorisée à ajouter / supprimer des livres.
+   Elle doit être EXACTEMENT la même que le compte créé dans Firebase
+   (Authentication → Utilisateurs) et que celle des règles firestore.rules. */
 const ADMIN_EMAIL = "mediatheque@ville-servonsurvilaine.fr";
 
 /* =============================================================== */
@@ -314,7 +319,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getAuth, onAuthStateChanged, signInAnonymously,
-  GoogleAuthProvider, signInWithPopup, signOut
+  signInWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
 const app   = document.getElementById("app");
@@ -387,15 +392,54 @@ function renderAdminZone(){
     );
   } else {
     adminZone.append(
-      el("button",{class:"btn tiny ghost", title:"Réservé à l'administrateur", onclick:adminLogin},"Espace médiathécaire")
+      el("button",{class:"btn tiny ghost", title:"Réservé à l'administrateur", onclick:openAdminLogin},"Espace médiathécaire")
     );
   }
 }
-async function adminLogin(){
-  try{
-    await signInWithPopup(auth, new GoogleAuthProvider());
-  }catch(e){
-    toast("Connexion annulée ou bloquée.");
+function openAdminLogin(){
+  const bg = el("div",{class:"modal-bg", onclick:e=>{ if(e.target===bg) close(); }});
+  const emailI = el("input",{type:"text", placeholder:"Adresse e-mail", autocomplete:"username"});
+  const passI  = el("input",{type:"password", placeholder:"Mot de passe", autocomplete:"current-password"});
+  const errEl  = el("div",{class:"login-err"},"");
+
+  const modal = el("div",{class:"modal", style:"max-width:420px"},[
+    el("h2",{},"Espace médiathécaire"),
+    el("p",{class:"sub"},"Connexion réservée à l'administrateur."),
+    el("div",{class:"field"},[el("label",{},"Adresse e-mail"), emailI]),
+    el("div",{class:"field"},[el("label",{},"Mot de passe"), passI]),
+    errEl,
+    el("div",{class:"modal-actions"},[
+      el("button",{class:"btn ghost", onclick:close},"Annuler"),
+      el("button",{class:"btn primary", onclick:login},"Se connecter")
+    ])
+  ]);
+  bg.append(modal); modalRoot.append(bg);
+  emailI.focus();
+  [emailI, passI].forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") login(); }));
+
+  function close(){ bg.remove(); }
+  async function login(){
+    const email = emailI.value.trim();
+    const pass  = passI.value;
+    errEl.textContent = "";
+    if (!email || !pass){ errEl.textContent = "Renseignez l'e-mail et le mot de passe."; return; }
+    const btn = modal.querySelector(".btn.primary");
+    btn.disabled = true; btn.textContent = "Connexion…";
+    try{
+      await signInWithEmailAndPassword(auth, email, pass);
+      close();
+    }catch(e){
+      console.error(e);
+      const map = {
+        "auth/invalid-email":     "Adresse e-mail invalide.",
+        "auth/invalid-credential":"E-mail ou mot de passe incorrect.",
+        "auth/wrong-password":    "E-mail ou mot de passe incorrect.",
+        "auth/user-not-found":    "Aucun compte avec cette adresse.",
+        "auth/too-many-requests": "Trop de tentatives, réessayez plus tard."
+      };
+      errEl.textContent = map[e.code] || "Connexion impossible.";
+      btn.disabled = false; btn.textContent = "Se connecter";
+    }
   }
 }
 
