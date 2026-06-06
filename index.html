@@ -246,6 +246,12 @@ textarea{ resize:vertical; min-height:104px; line-height:1.55; }
 .preview{ aspect-ratio:2/3; border-radius:var(--radius-sm); overflow:hidden; background:var(--bg-2); border:1px solid var(--line); box-shadow:var(--shadow-xs); display:flex; align-items:center; justify-content:center; }
 .preview .ph{ color:var(--ink-faint); font-size:12.5px; text-align:center; padding:10px; }
 .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:24px; }
+.import-box{ background:var(--bg-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px 14px 12px; margin-bottom:20px; }
+.import-box > label{ display:block; font-size:12.5px; font-weight:600; letter-spacing:.04em; color:var(--ink-soft); margin-bottom:9px; }
+.import-row{ display:flex; gap:10px; }
+.import-row input{ flex:1; }
+.import-row .btn{ white-space:nowrap; }
+.import-status{ font-size:13px; color:var(--ink-soft); margin-top:9px; min-height:16px; line-height:1.4; }
 
 /* ===============================================================
    ÉTATS
@@ -661,12 +667,65 @@ function commentForm(bookId){
 /* ===============================================================
    ACTIONS ADMIN
    =============================================================== */
+/* Récupère titre / couverture / description (/ auteur si dispo) depuis une page web.
+   Passe par un relais public car le navigateur ne peut pas lire un autre site directement. */
+async function fetchBookMeta(url){
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  const proxies = [
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`
+  ];
+  let html = null;
+  for (const make of proxies){
+    try{
+      const r = await fetch(make(url));
+      if (r.ok){ const t = await r.text(); if (t && t.length > 200){ html = t; break; } }
+    }catch(_){ /* on tente le relais suivant */ }
+  }
+  if (!html) throw new Error("Aucun contenu récupéré.");
+
+  const dom = new DOMParser().parseFromString(html, "text/html");
+  const m = (sel) => { const e = dom.querySelector(sel); return e ? (e.getAttribute("content")||"").trim() : ""; };
+
+  const title = m('meta[property="og:title"]') || m('meta[name="twitter:title"]') ||
+                (dom.querySelector("title")?.textContent || "").trim();
+  const cover = m('meta[property="og:image"]') || m('meta[name="twitter:image"]') ||
+                m('meta[property="og:image:url"]');
+  const desc  = m('meta[property="og:description"]') || m('meta[name="description"]') ||
+                m('meta[name="twitter:description"]');
+
+  // Auteur : uniquement via données structurées JSON-LD (fiable), sinon vide.
+  let author = "";
+  dom.querySelectorAll('script[type="application/ld+json"]').forEach(s => {
+    if (author) return;
+    try{
+      const arr = [].concat(JSON.parse(s.textContent));
+      for (const node of arr){
+        const a = node && node.author;
+        if (a){ author = Array.isArray(a) ? (a[0]?.name || a[0] || "") : (a.name || a || ""); break; }
+      }
+    }catch(_){}
+  });
+
+  return { title, author: typeof author === "string" ? author : "", cover, desc };
+}
+
 function openAddBook(){
   const bg = el("div",{class:"modal-bg", onclick:e=>{ if(e.target===bg) close(); }});
   const titleI  = el("input",{type:"text", placeholder:"Titre du livre"});
   const authorI = el("input",{type:"text", placeholder:"Auteur ou autrice"});
   const urlI    = el("input",{type:"text", placeholder:"https://… (lien de l'image de couverture)"});
   const noteI   = el("textarea",{placeholder:"Note de présentation (facultatif)", style:"min-height:70px"});
+
+  const urlImportI   = el("input",{type:"text", placeholder:"https://… (page du livre : Bedetheque, Babelio…)"});
+  const importBtn    = el("button",{class:"btn", onclick:doImport},"Récupérer");
+  const importStatus = el("div",{class:"import-status"},"");
+  const importBox = el("div",{class:"import-box"},[
+    el("label",{},"Pré-remplir depuis un lien (facultatif)"),
+    el("div",{class:"import-row"},[ urlImportI, importBtn ]),
+    importStatus
+  ]);
+  urlImportI.addEventListener("keydown", e => { if (e.key === "Enter") doImport(); });
 
   const prev = el("div",{class:"preview"},[el("div",{class:"ph"},"Aperçu de la couverture")]);
   urlI.addEventListener("input", ()=>{
@@ -680,7 +739,8 @@ function openAddBook(){
 
   const modal = el("div",{class:"modal"},[
     el("h2",{},"Nouveau livre"),
-    el("p",{class:"sub"},"Collez le lien d'une image de couverture trouvée sur le web."),
+    el("p",{class:"sub"},"Collez un lien pour pré-remplir, ou saisissez tout à la main."),
+    importBox,
     el("div",{class:"modal-grid"},[
       el("div",{},[
         el("div",{class:"field"},[el("label",{},"Titre"), titleI]),
@@ -698,6 +758,28 @@ function openAddBook(){
   bg.append(modal); modalRoot.append(bg);
   titleI.focus();
 
+  async function doImport(){
+    const url = urlImportI.value.trim();
+    if (!url){ importStatus.textContent = "Collez d'abord un lien."; return; }
+    importBtn.disabled = true; importBtn.textContent = "…";
+    importStatus.textContent = "Récupération en cours…";
+    try{
+      const meta = await fetchBookMeta(url);
+      if (meta.title)  titleI.value  = meta.title;
+      if (meta.author) authorI.value = meta.author;
+      if (meta.cover){ urlI.value = meta.cover; urlI.dispatchEvent(new Event("input")); }
+      if (meta.desc)   noteI.value = meta.desc;
+      const got = [meta.title&&"titre", meta.author&&"auteur", meta.cover&&"couverture", meta.desc&&"description"].filter(Boolean);
+      importStatus.textContent = got.length
+        ? "Récupéré : " + got.join(", ") + ". Vérifiez et complétez si besoin."
+        : "Aucune information trouvée sur cette page. Remplissez les champs à la main.";
+    }catch(e){
+      console.error(e);
+      importStatus.textContent = "Récupération impossible (page protégée ou service momentanément indisponible). Remplissez à la main.";
+    }finally{
+      importBtn.disabled = false; importBtn.textContent = "Récupérer";
+    }
+  }
   function close(){ bg.remove(); }
   async function save(){
     const title = titleI.value.trim();
