@@ -177,15 +177,15 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 
 /* disponibilité */
 .status-pill{ position:absolute; top:8px; left:8px; z-index:3; display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:99px; background:rgba(255,255,255,.94); color:var(--ink); box-shadow:var(--shadow-xs); }
-.status-pill .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
-.status-pill.avail .dot{ background:#2f9e5b; }
-.status-pill.borrowed .dot{ background:#c0392b; }
+.status-pill .ic{ width:15px; height:15px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:900; line-height:1; flex:none; }
+.status-pill.avail .ic{ background:#2f9e5b; }
+.status-pill.borrowed .ic{ background:#c0392b; }
 .status-pill.clickable{ cursor:pointer; transition:transform .12s ease, background .12s ease; }
 .status-pill.clickable:hover{ background:#fff; transform:translateY(-1px); }
 .book-status{ display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:700; margin-top:6px; }
-.book-status .dot{ width:9px; height:9px; border-radius:50%; }
-.book-status.avail{ color:#2f7d4f; } .book-status.avail .dot{ background:#2f9e5b; }
-.book-status.borrowed{ color:#a23a2c; } .book-status.borrowed .dot{ background:#c0392b; }
+.book-status .ic{ width:18px; height:18px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:900; line-height:1; }
+.book-status.avail{ color:#2f7d4f; } .book-status.avail .ic{ background:#2f9e5b; }
+.book-status.borrowed{ color:#a23a2c; } .book-status.borrowed .ic{ background:#c0392b; }
 .admin-controls{ display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
 .check{ display:inline-flex; align-items:center; gap:9px; cursor:pointer; font-weight:600; color:var(--ink); font-size:14.5px; margin-top:2px; }
 .check input{ width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
@@ -552,18 +552,15 @@ const missingCover = () => el("div",{class:"cover-missing"},[el("span",{class:"m
 
 function statusPill(id, b){
   const avail = b.available === true;
-  const pill = el("span",{class:"status-pill "+(avail?"avail":"borrowed")},[
-    el("span",{class:"dot"}), avail ? "Disponible" : "Emprunté"
+  const pill = el("span",{class:"status-pill clickable "+(avail?"avail":"borrowed")},[
+    el("span",{class:"ic"}, avail ? "✓" : "✕"), avail ? "Disponible" : "Emprunté"
   ]);
-  if (isAdmin){
-    pill.classList.add("clickable");
-    pill.title = "Cliquer pour changer la disponibilité";
-    pill.addEventListener("click", async (e) => {
-      e.preventDefault(); e.stopPropagation();
-      try{ await updateDoc(doc(db,"books",id), { available: !avail }); }
-      catch(err){ console.error(err); toast("Modification impossible."); }
-    });
-  }
+  pill.title = "Cliquer pour changer la disponibilité";
+  pill.addEventListener("click", async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    try{ await updateDoc(doc(db,"books",id), { available: !avail }); }
+    catch(err){ console.error(err); toast("Modification impossible."); }
+  });
   return pill;
 }
 
@@ -613,7 +610,7 @@ function renderBook(id){
     if (pill){
       pill.className = "book-status " + (avail ? "avail" : "borrowed");
       pill.innerHTML = "";
-      pill.append(el("span",{class:"dot"}), avail ? "Disponible" : "Emprunté");
+      pill.append(el("span",{class:"ic"}, avail ? "✓" : "✕"), avail ? "Disponible" : "Emprunté");
     }
     const btn = document.getElementById("bookStatusBtn");
     if (btn) btn.textContent = avail ? "Marquer emprunté" : "Marquer disponible";
@@ -654,12 +651,13 @@ function buildInfo(infoCol, id, b, onToggle){
     el("div",{class:"book-status", id:"bookStatusPill"}),
     b.note ? el("div",{class:"note"}, b.note) : null
   ]);
+  const controls = el("div",{class:"admin-controls"},[
+    el("button",{class:"btn tiny", id:"bookStatusBtn", onclick:onToggle},"…")
+  ]);
   if (isAdmin){
-    head.append(el("div",{class:"admin-controls"},[
-      el("button",{class:"btn tiny", id:"bookStatusBtn", onclick:onToggle},"…"),
-      el("button",{class:"btn tiny danger", onclick:()=>removeBook(id, b.title)},"Supprimer ce livre")
-    ]));
+    controls.append(el("button",{class:"btn tiny danger", onclick:()=>removeBook(id, b.title)},"Supprimer ce livre"));
   }
+  head.append(controls);
   infoCol.append(head);
 
   infoCol.append(el("div",{class:"section-title"},[
