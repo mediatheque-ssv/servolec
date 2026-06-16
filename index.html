@@ -180,7 +180,7 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 .status-pill .ic{ width:15px; height:15px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:900; line-height:1; flex:none; }
 .status-pill.avail .ic{ background:#2f9e5b; }
 .status-pill.borrowed .ic{ background:#c0392b; }
-.status-pill .ic svg, .book-status .ic svg{ width:64%; height:64%; display:block; }
+.status-pill .ic svg, .book-status .ic svg{ width:100%; height:100%; display:block; }
 .status-pill.clickable{ cursor:pointer; transition:transform .12s ease, background .12s ease; }
 .status-pill.clickable:hover{ background:#fff; transform:translateY(-1px); }
 .book-status{ display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:700; margin-top:6px; }
@@ -388,8 +388,8 @@ function starsNode(value){
   for (let i = 1; i <= 5; i++) wrap.append(el("span",{class:"star"+(i <= value ? " on" : "")},"♥"));
   return wrap;
 }
-const ICON_OK = "<svg viewBox='0 0 16 16' fill='none' stroke='#fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M3.5 8.5l3 3 6-7'/></svg>";
-const ICON_NO = "<svg viewBox='0 0 16 16' fill='none' stroke='#fff' stroke-width='2.6' stroke-linecap='round'><path d='M4.5 4.5l7 7M11.5 4.5l-7 7'/></svg>";
+const ICON_OK = "<svg viewBox='0 0 24 24' fill='none' stroke='#fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M6 12.5L10 16L18 8'/></svg>";
+const ICON_NO = "<svg viewBox='0 0 24 24' fill='none' stroke='#fff' stroke-width='3' stroke-linecap='round'><path d='M7 7L17 17M17 7L7 17'/></svg>";
 let toastTimer;
 function toast(msg){
   const t = document.getElementById("toast");
@@ -513,16 +513,16 @@ function renderHome(){
   app.append(grid);
   grid.append(el("div",{class:"center-state", style:"grid-column:1/-1"},[el("div",{class:"spinner"}),"Chargement des couvertures…"]));
 
+  const cards = new Map();   // id -> { card, data }
+  let addCard = null;
+  let first = true;
+
   const qy = query(collection(db,"books"), orderBy("createdAt","desc"));
   unsubscribe = onSnapshot(qy, snap => {
-    grid.innerHTML = "";
+    if (first){ grid.innerHTML = ""; first = false; }
 
-    if (isAdmin){
-      grid.append(el("button",{class:"add-card", onclick:openAddBook},[
-        el("span",{class:"plus"},"+"), el("span",{},"Ajouter un livre")
-      ]));
-    }
     if (snap.empty && !isAdmin){
+      grid.innerHTML = ""; cards.clear();
       grid.append(el("div",{class:"center-state", style:"grid-column:1/-1"},[
         el("div",{class:"quill"},"✦"),
         el("div",{class:"big"},"La bibliothèque est encore vide"),
@@ -530,14 +530,66 @@ function renderHome(){
       ]));
       return;
     }
+
+    const order = [];
+    if (isAdmin){
+      if (!addCard) addCard = el("button",{class:"add-card", onclick:openAddBook},[
+        el("span",{class:"plus"},"+"), el("span",{},"Ajouter un livre")
+      ]);
+      order.push(addCard);
+    }
+
+    const seen = new Set();
     let i = 0;
-    snap.forEach(d => grid.append(bookCard(d.id, d.data(), i++)));
+    snap.forEach(d => {
+      const id = d.id, b = d.data();
+      seen.add(id);
+      let entry = cards.get(id);
+      if (!entry){
+        entry = { card: bookCard(id, b, i), data: b };
+        cards.set(id, entry);
+      } else {
+        updateCard(entry.card, id, b, entry.data);
+        entry.data = b;
+      }
+      order.push(entry.card);
+      i++;
+    });
+
+    for (const [id, entry] of cards){
+      if (!seen.has(id)){ entry.card.remove(); cards.delete(id); }
+    }
+    // Replacer dans l'ordre : déplacer un nœud existant ne recharge pas son image.
+    order.forEach(node => grid.appendChild(node));
   }, err => {
     grid.innerHTML = "";
     grid.append(el("div",{class:"center-state", style:"grid-column:1/-1"},
       "Impossible de charger la bibliothèque. Vérifiez la configuration / les règles Firestore."));
     console.error(err);
   });
+}
+
+/* Met à jour une carte sans recréer la couverture (sauf si le lien a changé). */
+function updateCard(card, id, b, prev){
+  prev = prev || {};
+  const frame = card.querySelector(".cover-frame");
+  if (b.coverUrl !== prev.coverUrl){
+    const nf = coverNode(b.coverUrl, b.title);
+    nf.append(statusPill(id, b));
+    if (frame) card.replaceChild(nf, frame);
+  } else if (frame){
+    const oldPill = frame.querySelector(".status-pill");
+    if (oldPill) oldPill.remove();
+    frame.append(statusPill(id, b));
+  }
+  const t = card.querySelector(".meta .t");
+  if (t) t.textContent = b.title || "Sans titre";
+  const meta = card.querySelector(".meta");
+  const a = card.querySelector(".meta .a");
+  if (b.author){
+    if (a) a.textContent = b.author;
+    else if (meta) meta.append(el("div",{class:"a"}, b.author));
+  } else if (a){ a.remove(); }
 }
 
 function coverNode(url, title){
