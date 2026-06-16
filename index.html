@@ -175,6 +175,21 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 .add-card:hover{ transform:translateY(-5px); box-shadow:var(--shadow-md); filter:brightness(1.02); }
 .add-card .plus{ font-size:38px; line-height:1; font-weight:300; }
 
+/* disponibilité */
+.status-pill{ position:absolute; top:8px; left:8px; z-index:3; display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:99px; background:rgba(255,255,255,.94); color:var(--ink); box-shadow:var(--shadow-xs); }
+.status-pill .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+.status-pill.avail .dot{ background:#2f9e5b; }
+.status-pill.borrowed .dot{ background:#c0392b; }
+.status-pill.clickable{ cursor:pointer; transition:transform .12s ease, background .12s ease; }
+.status-pill.clickable:hover{ background:#fff; transform:translateY(-1px); }
+.book-status{ display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:700; margin-top:6px; }
+.book-status .dot{ width:9px; height:9px; border-radius:50%; }
+.book-status.avail{ color:#2f7d4f; } .book-status.avail .dot{ background:#2f9e5b; }
+.book-status.borrowed{ color:#a23a2c; } .book-status.borrowed .dot{ background:#c0392b; }
+.admin-controls{ display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+.check{ display:inline-flex; align-items:center; gap:9px; cursor:pointer; font-weight:600; color:var(--ink); font-size:14.5px; margin-top:2px; }
+.check input{ width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
+
 /* ===============================================================
    PAGE LIVRE
    =============================================================== */
@@ -336,7 +351,7 @@ const ADMIN_EMAIL = "mediatheque@ville-servonsurvilaine.fr";
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
-  getFirestore, collection, doc, addDoc, deleteDoc,
+  getFirestore, collection, doc, addDoc, deleteDoc, updateDoc,
   onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
@@ -535,12 +550,31 @@ function coverNode(url, title){
 }
 const missingCover = () => el("div",{class:"cover-missing"},[el("span",{class:"mark"},"✦"),el("span",{},"Couverture indisponible")]);
 
+function statusPill(id, b){
+  const avail = b.available === true;
+  const pill = el("span",{class:"status-pill "+(avail?"avail":"borrowed")},[
+    el("span",{class:"dot"}), avail ? "Disponible" : "Emprunté"
+  ]);
+  if (isAdmin){
+    pill.classList.add("clickable");
+    pill.title = "Cliquer pour changer la disponibilité";
+    pill.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try{ await updateDoc(doc(db,"books",id), { available: !avail }); }
+      catch(err){ console.error(err); toast("Modification impossible."); }
+    });
+  }
+  return pill;
+}
+
 function bookCard(id, b, i){
   const card = el("button",{
     class:"book", style:`animation-delay:${Math.min(i*55,500)}ms`,
     onclick:()=>{ location.hash = "#/book/"+encodeURIComponent(id); }
   });
-  card.append(coverNode(b.coverUrl, b.title));
+  const frame = coverNode(b.coverUrl, b.title);
+  frame.append(statusPill(id, b));
+  card.append(frame);
   const meta = el("div",{class:"meta"},[
     el("div",{class:"t"}, b.title || "Sans titre"),
     b.author ? el("div",{class:"a"}, b.author) : null
@@ -566,6 +600,24 @@ function renderBook(id){
 
   const bookRef = doc(db,"books",id);
   let bookLoaded = false;
+  let data = null;
+
+  async function toggleAvail(){
+    if (!data) return;
+    try{ await updateDoc(bookRef, { available: !(data.available === true) }); }
+    catch(e){ console.error(e); toast("Modification impossible."); }
+  }
+  function paintStatus(){
+    const avail = data && data.available === true;
+    const pill = document.getElementById("bookStatusPill");
+    if (pill){
+      pill.className = "book-status " + (avail ? "avail" : "borrowed");
+      pill.innerHTML = "";
+      pill.append(el("span",{class:"dot"}), avail ? "Disponible" : "Emprunté");
+    }
+    const btn = document.getElementById("bookStatusBtn");
+    if (btn) btn.textContent = avail ? "Marquer emprunté" : "Marquer disponible";
+  }
 
   const unsubBook = onSnapshot(bookRef, d => {
     if (!d.exists()){
@@ -573,16 +625,17 @@ function renderBook(id){
       infoCol.append(el("div",{class:"center-state"},[el("div",{class:"quill"},"✦"),el("div",{class:"big"},"Ce livre n'existe plus"),el("a",{href:"#/"},"Revenir aux lectures")]));
       return;
     }
-    const b = d.data();
+    data = d.data();
     coverCol.innerHTML = "";
-    coverCol.append(coverNode(b.coverUrl, b.title));
+    coverCol.append(coverNode(data.coverUrl, data.title));
 
-    if (!bookLoaded){ infoCol.innerHTML = ""; bookLoaded = true; buildInfo(infoCol, id, b); }
+    if (!bookLoaded){ infoCol.innerHTML = ""; bookLoaded = true; buildInfo(infoCol, id, data, toggleAvail); }
     else {
       const h = infoCol.querySelector(".book-head");
-      if (h){ h.querySelector("h1").textContent = b.title||"Sans titre";
-              const a=h.querySelector(".author"); if(a) a.textContent=b.author||""; }
+      if (h){ h.querySelector("h1").textContent = data.title||"Sans titre";
+              const a=h.querySelector(".author"); if(a) a.textContent=data.author||""; }
     }
+    paintStatus();
   });
 
   const cwrap = el("div",{class:"comments-wrap"});
@@ -593,17 +646,19 @@ function renderBook(id){
   renderBook._cwrap = cwrap;
 }
 
-function buildInfo(infoCol, id, b){
+function buildInfo(infoCol, id, b, onToggle){
   const head = el("div",{class:"book-head"},[
     el("div",{class:"kicker"},"Sélection du groupe"),
     el("h1",{}, b.title || "Sans titre"),
     b.author ? el("p",{class:"author"}, b.author) : null,
+    el("div",{class:"book-status", id:"bookStatusPill"}),
     b.note ? el("div",{class:"note"}, b.note) : null
   ]);
   if (isAdmin){
-    head.append(el("div",{style:"margin-top:18px"},
+    head.append(el("div",{class:"admin-controls"},[
+      el("button",{class:"btn tiny", id:"bookStatusBtn", onclick:onToggle},"…"),
       el("button",{class:"btn tiny danger", onclick:()=>removeBook(id, b.title)},"Supprimer ce livre")
-    ));
+    ]));
   }
   infoCol.append(head);
 
@@ -774,6 +829,7 @@ function openAddBook(){
   const authorI = el("input",{type:"text", placeholder:"Auteur ou autrice"});
   const urlI    = el("input",{type:"text", placeholder:"https://… (lien de l'image de couverture)"});
   const noteI   = el("textarea",{placeholder:"Note de présentation (facultatif)", style:"min-height:70px"});
+  const availI  = el("input",{type:"checkbox"});
 
   const urlImportI   = el("input",{type:"text", placeholder:"https://… (page du livre : Bedetheque…)"});
   const importBtn    = el("button",{class:"btn", onclick:doImport},"Récupérer");
@@ -808,6 +864,7 @@ function openAddBook(){
       el("div",{},[el("label",{style:"font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;display:block"},"Aperçu"), prev])
     ]),
     el("div",{class:"field"},[el("label",{},"Présentation (facultatif)"), noteI]),
+    el("label",{class:"check"},[ availI, el("span",{},"Disponible (en bannette) — sinon « Emprunté »") ]),
     el("div",{class:"modal-actions"},[
       el("button",{class:"btn ghost", onclick:close},"Annuler"),
       el("button",{class:"btn primary", onclick:save},"Ajouter à la bibliothèque")
@@ -850,6 +907,7 @@ function openAddBook(){
         author: authorI.value.trim(),
         coverUrl: urlI.value.trim(),
         note: noteI.value.trim(),
+        available: availI.checked,
         createdAt: serverTimestamp()
       });
       close(); toast("Livre ajouté.");
