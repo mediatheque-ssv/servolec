@@ -559,8 +559,14 @@ function renderHome(){
     for (const [id, entry] of cards){
       if (!seen.has(id)){ entry.card.remove(); cards.delete(id); }
     }
-    // Replacer dans l'ordre : déplacer un nœud existant ne recharge pas son image.
-    order.forEach(node => grid.appendChild(node));
+    // Réconciliation minimale : on ne déplace un nœud que si son ordre a changé.
+    // En cas de simple bascule de statut, l'ordre est identique => aucune
+    // couverture n'est ré-attachée, donc pas de rechargement d'image.
+    let ref = grid.firstChild;
+    for (const node of order){
+      if (ref === node){ ref = ref.nextSibling; }
+      else { grid.insertBefore(node, ref); }
+    }
   }, err => {
     grid.innerHTML = "";
     grid.append(el("div",{class:"center-state", style:"grid-column:1/-1"},
