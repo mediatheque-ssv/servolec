@@ -190,6 +190,8 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 .admin-controls{ display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
 .check{ display:inline-flex; align-items:center; gap:9px; cursor:pointer; font-weight:600; color:var(--ink); font-size:14.5px; margin-top:2px; }
 .check input{ width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
+.export-choices{ display:flex; flex-direction:column; gap:10px; margin:4px 0 2px; }
+.export-choices .btn{ width:100%; justify-content:center; text-align:center; padding:12px 16px; }
 
 /* ===============================================================
    PAGE LIVRE
@@ -433,7 +435,7 @@ function renderAdminZone(){
     adminZone.append(
       el("span",{class:"who"}, me.displayName || me.email),
       el("span",{class:"badge"},"médiathécaire"),
-      el("button",{class:"btn tiny ghost", onclick:exportComments},"Exporter les avis"),
+      el("button",{class:"btn tiny ghost", onclick:openExportChooser},"Exporter les avis"),
       el("button",{class:"btn tiny ghost", onclick:()=>signOut(auth)},"Se déconnecter")
     );
   } else {
@@ -1001,98 +1003,175 @@ function heartsHtml(v){
   for (let i=1;i<=5;i++) s += '<span class="'+(i<=v?'on':'')+'">&#9829;</span>';
   return s + '</span>';
 }
-async function exportComments(){
-  toast("Préparation du document…");
-  try{
-    const booksSnap = await getDocs(query(collection(db,"books"), orderBy("createdAt","desc")));
-    const sections = [];
-    let totalComments = 0;
-    for (const bk of booksSnap.docs){
-      const b = bk.data();
-      const cSnap = await getDocs(query(collection(db,"books",bk.id,"comments"), orderBy("createdAt","asc")));
-      if (cSnap.empty) continue;
-      let sum = 0, n = 0;
-      const items = [];
-      cSnap.forEach(cd => {
-        const c = cd.data();
-        totalComments++;
-        if (c.rating > 0){ sum += c.rating; n++; }
-        items.push(
-          '<li><div class="cmeta"><span class="name">'+escapeHtml(c.name||"Anonyme")+'</span>'+
-          '<span class="date">'+escapeHtml(fmtDate(c.createdAt))+'</span>'+
-          (c.rating>0 ? heartsHtml(c.rating) : '')+'</div>'+
-          (c.text ? '<p>'+escapeHtml(c.text).replace(/\n/g,"<br>")+'</p>' : '')+'</li>'
-        );
-      });
-      const avg = n ? (sum/n) : 0;
-      const cover = b.coverUrl
-        ? '<img src="'+escapeHtml(b.coverUrl)+'" alt="" referrerpolicy="no-referrer">'
-        : '<div class="nocover">&#10022;</div>';
-      sections.push(
-        '<article class="book">'+
-          '<div class="cover">'+cover+'</div>'+
-          '<div class="content">'+
-            '<h2>'+escapeHtml(b.title||"Sans titre")+'</h2>'+
-            (b.author ? '<div class="author">'+escapeHtml(b.author)+'</div>' : '')+
-            (n ? '<div class="avg">'+heartsHtml(Math.round(avg))+'<span class="avgnum">'+avg.toFixed(1).replace(".",",")+' / 5</span><span class="avgcnt">&middot; '+n+' note'+(n>1?'s':'')+'</span></div>' : '')+
-            '<ul class="comments">'+items.join("")+'</ul>'+
-          '</div>'+
-        '</article>'
-      );
-    }
-    if (!sections.length){ toast("Aucun avis à exporter."); return; }
-
-    const today = new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric"}).format(new Date());
-    const docHtml = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Servolec &mdash; Avis de lecture</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
-<style>
+const REPORT_CSS = `
 :root{--bg:#f7f4ee;--card:#fff;--ink:#201e1a;--soft:#5d574c;--faint:#938b7c;--accent:#c0563b;--line:#e8e2d6;}
 *{box-sizing:border-box;}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hanken Grotesk",system-ui,sans-serif;line-height:1.55;}
 .page{max-width:820px;margin:0 auto;padding:40px 26px 70px;}
-header.rep{text-align:center;margin-bottom:34px;border-bottom:1px solid var(--line);padding-bottom:24px;}
-header.rep h1{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:38px;margin:0;letter-spacing:-.02em;}
+header.rep{text-align:center;margin-bottom:30px;border-bottom:1px solid var(--line);padding-bottom:22px;}
+header.rep h1{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:36px;margin:0;letter-spacing:-.02em;}
 header.rep h1 b{color:var(--accent);}
 header.rep .meta{color:var(--soft);margin-top:8px;font-size:14.5px;}
-.book{display:flex;gap:22px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:24px;box-shadow:0 2px 8px rgba(32,30,26,.05);}
-.cover{flex:none;width:118px;}
-.cover img{width:100%;border-radius:6px;box-shadow:0 6px 16px rgba(32,30,26,.18);display:block;}
-.nocover{width:100%;aspect-ratio:2/3;border-radius:6px;background:#ece3d3;display:flex;align-items:center;justify-content:center;color:#cdb083;font-family:"Fraunces",serif;font-size:34px;}
-.content{flex:1;min-width:0;}
-.content h2{font-family:"Fraunces",Georgia,serif;font-weight:560;font-size:23px;margin:2px 0 2px;letter-spacing:-.01em;}
+table.book{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:22px;box-shadow:0 2px 8px rgba(32,30,26,.05);}
+table.book td{padding:18px;vertical-align:top;}
+td.cover-cell{width:148px;}
+td.cover-cell img{width:118px;border-radius:6px;box-shadow:0 6px 16px rgba(32,30,26,.18);}
+.nocover{width:118px;height:177px;border-radius:6px;background:#ece3d3;text-align:center;line-height:177px;color:#cdb083;font-family:"Fraunces",serif;font-size:34px;}
+h2{font-family:"Fraunces",Georgia,serif;font-weight:560;font-size:22px;margin:0 0 2px;letter-spacing:-.01em;}
 .author{color:var(--soft);font-style:italic;margin-bottom:8px;}
-.avg{display:flex;align-items:center;gap:9px;margin-bottom:14px;}
+.avg{margin-bottom:12px;}
 .avg .avgnum{font-weight:700;font-size:14px;}
 .avg .avgcnt{color:var(--faint);font-size:13px;}
 .hearts span{color:var(--line);font-size:15px;}
 .hearts span.on{color:var(--accent);}
-.comments{list-style:none;margin:0;padding:0;}
-.comments li{border-top:1px solid var(--line);padding:12px 0;}
-.comments li:first-child{border-top:none;}
-.cmeta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:3px;}
+.cmt{border-top:1px solid var(--line);padding:10px 0;}
+.cmt:first-of-type{border-top:none;}
 .cmeta .name{font-weight:700;}
 .cmeta .date{color:var(--faint);font-size:13px;}
-.comments p{margin:0;}
-footer.rep{text-align:center;color:var(--faint);font-size:12.5px;margin-top:30px;}
-@media print{ body{background:#fff;} .book{break-inside:avoid;box-shadow:none;} .page{padding:0;} }
-</style></head>
-<body><div class="page">
-<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">Export du ${today} &middot; ${totalComments} avis sur ${sections.length} livre${sections.length>1?'s':''}</div></header>
+.ctext{margin-top:3px;}
+footer.rep{text-align:center;color:var(--faint);font-size:12.5px;margin-top:28px;}
+@media print{ body{background:#fff;} table.book{break-inside:avoid;box-shadow:none;} .page{padding:0;max-width:none;} }`;
+
+function guessMime(url){
+  const u = (url||"").toLowerCase();
+  if (u.includes(".png")) return "image/png";
+  if (u.includes(".gif")) return "image/gif";
+  if (u.includes(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+async function urlToDataUri(url){
+  const proxies = [
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`
+  ];
+  for (const make of proxies){
+    try{
+      const r = await fetch(make(url));
+      if (!r.ok) continue;
+      let blob = await r.blob();
+      if (!blob || blob.size < 100) continue;
+      if (!/^image\//.test(blob.type)) blob = new Blob([blob], { type: guessMime(url) });
+      return await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(blob);
+      });
+    }catch(_){ /* relais suivant */ }
+  }
+  return null;
+}
+
+async function gatherReport(embedCovers){
+  const booksSnap = await getDocs(query(collection(db,"books"), orderBy("createdAt","desc")));
+  const sections = [];
+  let totalComments = 0;
+  for (const bk of booksSnap.docs){
+    const b = bk.data();
+    const cSnap = await getDocs(query(collection(db,"books",bk.id,"comments"), orderBy("createdAt","asc")));
+    if (cSnap.empty) continue;
+    let sum = 0, n = 0;
+    const items = [];
+    cSnap.forEach(cd => {
+      const c = cd.data();
+      totalComments++;
+      if (c.rating > 0){ sum += c.rating; n++; }
+      items.push(
+        '<div class="cmt"><div class="cmeta"><span class="name">'+escapeHtml(c.name||"Anonyme")+'</span> '+
+        '<span class="date">'+escapeHtml(fmtDate(c.createdAt))+'</span> '+
+        (c.rating>0 ? heartsHtml(c.rating) : '')+'</div>'+
+        (c.text ? '<div class="ctext">'+escapeHtml(c.text).replace(/\n/g,"<br>")+'</div>' : '')+'</div>'
+      );
+    });
+    const avg = n ? (sum/n) : 0;
+    let coverSrc = b.coverUrl || "";
+    if (coverSrc && embedCovers){
+      const data = await urlToDataUri(coverSrc);
+      if (data) coverSrc = data;
+    }
+    const cover = coverSrc
+      ? '<img src="'+escapeHtml(coverSrc)+'" width="118" alt="" referrerpolicy="no-referrer">'
+      : '<div class="nocover">&#10022;</div>';
+    sections.push(
+      '<table class="book" cellspacing="0" cellpadding="0"><tr>'+
+        '<td class="cover-cell" width="148" valign="top">'+cover+'</td>'+
+        '<td class="content-cell" valign="top">'+
+          '<h2>'+escapeHtml(b.title||"Sans titre")+'</h2>'+
+          (b.author ? '<div class="author">'+escapeHtml(b.author)+'</div>' : '')+
+          (n ? '<div class="avg">'+heartsHtml(Math.round(avg))+' <span class="avgnum">'+avg.toFixed(1).replace(".",",")+' / 5</span> <span class="avgcnt">&middot; '+n+' note'+(n>1?'s':'')+'</span></div>' : '')+
+          items.join("")+
+        '</td>'+
+      '</tr></table>'
+    );
+  }
+  return { sections, totalComments };
+}
+
+function reportHeader(totalComments, count){
+  const today = new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric"}).format(new Date());
+  return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">Export du '+today+' &middot; '+totalComments+' avis sur '+count+' livre'+(count>1?'s':'')+'</div></header>';
+}
+function styledDoc(sections, totalComments){
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Servolec &mdash; Avis de lecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
+<style>${REPORT_CSS}</style></head>
+<body><div class="page">${reportHeader(totalComments, sections.length)}
 ${sections.join("\n")}
 <footer class="rep">Document g&eacute;n&eacute;r&eacute; depuis l'application Servolec.</footer>
 </div></body></html>`;
-
-    const blob = new Blob([docHtml], { type:"text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = el("a",{ href:url, download:"servolec-avis-"+todayStr()+".html" });
-    document.body.append(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-    toast(totalComments+" avis exportés.");
+}
+function wordDoc(sections, totalComments){
+  return `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset="utf-8"><title>Servolec - Avis de lecture</title><style>${REPORT_CSS}</style></head>
+<body><div class="page">${reportHeader(totalComments, sections.length)}
+${sections.join("\n")}</div></body></html>`;
+}
+function downloadBlob(content, type, filename){
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = el("a",{ href:url, download:filename });
+  document.body.append(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+async function exportAs(format){
+  toast("Préparation du document…");
+  try{
+    const embed = (format !== "word");   // couvertures intégrées sauf pour Word
+    const { sections, totalComments } = await gatherReport(embed);
+    if (!sections.length){ toast("Aucun avis à exporter."); return; }
+    const date = todayStr();
+    if (format === "html"){
+      downloadBlob(styledDoc(sections, totalComments), "text/html;charset=utf-8", "servolec-avis-"+date+".html");
+      toast(totalComments+" avis exportés.");
+    } else if (format === "word"){
+      downloadBlob("\uFEFF"+wordDoc(sections, totalComments), "application/msword", "servolec-avis-"+date+".doc");
+      toast(totalComments+" avis exportés.");
+    } else if (format === "pdf"){
+      const w = window.open("", "_blank");
+      if (!w){ toast("Autorisez les fenêtres pop-up pour générer le PDF."); return; }
+      w.document.open(); w.document.write(styledDoc(sections, totalComments)); w.document.close();
+      w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 700);
+      toast("Dans la fenêtre d'impression, choisissez « Enregistrer en PDF ».");
+    }
   }catch(e){
     console.error(e); toast("Export impossible.");
   }
+}
+function openExportChooser(){
+  const bg = el("div",{class:"modal-bg", onclick:e=>{ if(e.target===bg) bg.remove(); }});
+  const modal = el("div",{class:"modal", style:"max-width:440px"},[
+    el("h2",{},"Exporter les avis"),
+    el("p",{class:"sub"},"Choisissez le format du document."),
+    el("div",{class:"export-choices"},[
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('pdf'); }},"PDF (à enregistrer / imprimer)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word'); }},"Word (.doc)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('html'); }},"Page web (.html)")
+    ]),
+    el("div",{class:"modal-actions"},[ el("button",{class:"btn ghost", onclick:()=>bg.remove()},"Annuler") ])
+  ]);
+  bg.append(modal); modalRoot.append(bg);
 }
 
 /* ---------- démarrage ---------- */
