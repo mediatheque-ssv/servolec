@@ -1120,12 +1120,22 @@ function reportHeader(totalComments, count, inline){
   }
   return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">'+meta+'</div></header>';
 }
-function styledDoc(sections, totalComments){
+function styledDoc(sections, totalComments, booklet){
+  const bookletCss = booklet ? `
+@page{ size:A5; margin:12mm; }
+.page{ max-width:none; padding:0; }
+header.rep{ margin-bottom:20px; padding-bottom:16px; }
+header.rep h1{ font-size:26px; }
+table.book td{ padding:14px 0; }
+td.cover-cell{ width:118px; padding-right:18px; }
+td.cover-cell img{ width:90px; }
+h2{ font-size:18px; }
+.cmt{ padding:8px 0; }` : '';
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Servolec &mdash; Avis de lecture</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
-<style>${REPORT_CSS}</style></head>
+<style>${REPORT_CSS}${bookletCss}</style></head>
 <body><div class="page">${reportHeader(totalComments, sections.length)}
 ${sections.join("\n")}
 </div></body></html>`;
@@ -1155,12 +1165,14 @@ async function exportAs(format){
     } else if (format === "word"){
       downloadBlob("\uFEFF"+wordDoc(sections, totalComments), "application/msword", "servolec-avis-"+date+".doc");
       toast(totalComments+" avis exportés.");
-    } else if (format === "pdf"){
+    } else if (format === "pdf" || format === "booklet"){
       const w = window.open("", "_blank");
-      if (!w){ toast("Autorisez les fenêtres pop-up pour générer le PDF."); return; }
-      w.document.open(); w.document.write(styledDoc(sections, totalComments)); w.document.close();
+      if (!w){ toast("Autorisez les fenêtres pop-up pour générer le document."); return; }
+      w.document.open(); w.document.write(styledDoc(sections, totalComments, format === "booklet")); w.document.close();
       w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 700);
-      toast("Dans la fenêtre d'impression, choisissez « Enregistrer en PDF ».");
+      toast(format === "booklet"
+        ? "À l'impression, choisissez « Livret » et le recto-verso."
+        : "Dans la fenêtre d'impression, choisissez « Enregistrer en PDF ».");
     }
   }catch(e){
     console.error(e); toast("Export impossible.");
@@ -1173,6 +1185,7 @@ function openExportChooser(){
     el("p",{class:"sub"},"Choisissez le format du document."),
     el("div",{class:"export-choices"},[
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('pdf'); }},"PDF (à enregistrer / imprimer)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret (A4 plié en 2)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word'); }},"Word (.doc)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('html'); }},"Page web (.html)")
     ]),
