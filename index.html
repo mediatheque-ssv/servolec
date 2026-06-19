@@ -998,9 +998,12 @@ function todayStr(){
 function escapeHtml(s){
   return (s==null?"":String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-function heartsHtml(v){
+function heartsHtml(v, inline){
   let s = '<span class="hearts">';
-  for (let i=1;i<=5;i++) s += '<span class="'+(i<=v?'on':'')+'">&#9829;</span>';
+  for (let i=1;i<=5;i++){
+    if (inline) s += '<span style="color:'+(i<=v?'#c0563b':'#d9d2c4')+';font-size:15px;">&#9829;</span>';
+    else s += '<span class="'+(i<=v?'on':'')+'">&#9829;</span>';
+  }
   return s + '</span>';
 }
 const REPORT_CSS = `
@@ -1012,9 +1015,9 @@ header.rep{text-align:center;margin-bottom:30px;border-bottom:1px solid var(--li
 header.rep h1{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:36px;margin:0;letter-spacing:-.02em;}
 header.rep h1 b{color:var(--accent);}
 header.rep .meta{color:var(--soft);margin-top:8px;font-size:14.5px;}
-table.book{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:22px;box-shadow:0 2px 8px rgba(32,30,26,.05);}
-table.book td{padding:18px;vertical-align:top;}
-td.cover-cell{width:148px;}
+table.book{width:100%;border-collapse:collapse;margin:0 0 14px;}
+table.book td{padding:20px 0;vertical-align:top;border-bottom:1px solid var(--line);}
+td.cover-cell{width:148px;padding-right:24px;}
 td.cover-cell img{width:118px;border-radius:6px;box-shadow:0 6px 16px rgba(32,30,26,.18);}
 .nocover{width:118px;height:177px;border-radius:6px;background:#ece3d3;text-align:center;line-height:177px;color:#cdb083;font-family:"Fraunces",serif;font-size:34px;}
 h2{font-family:"Fraunces",Georgia,serif;font-weight:560;font-size:22px;margin:0 0 2px;letter-spacing:-.01em;}
@@ -1046,38 +1049,76 @@ async function gatherReport(forWord){
       const c = cd.data();
       totalComments++;
       if (c.rating > 0){ sum += c.rating; n++; }
-      items.push(
-        '<div class="cmt"><div class="cmeta"><span class="name">'+escapeHtml(c.name||"Anonyme")+'</span> '+
-        '<span class="date">'+escapeHtml(fmtDate(c.createdAt))+'</span> '+
-        (c.rating>0 ? heartsHtml(c.rating) : '')+'</div>'+
-        (c.text ? '<div class="ctext">'+escapeHtml(c.text).replace(/\n/g,"<br>")+'</div>' : '')+'</div>'
-      );
+      const name = escapeHtml(c.name||"Anonyme");
+      const date = escapeHtml(fmtDate(c.createdAt));
+      const text = c.text ? escapeHtml(c.text).replace(/\n/g,"<br>") : "";
+      if (forWord){
+        items.push(
+          '<div style="border-top:1px solid #e8e2d6;padding:12px 0;">'+
+          '<div><span style="font-weight:bold;color:#201e1a;">'+name+'</span> '+
+          '<span style="color:#938b7c;font-size:13px;">'+date+'</span> '+
+          (c.rating>0 ? heartsHtml(c.rating, true) : '')+'</div>'+
+          (text ? '<div style="margin-top:4px;color:#201e1a;">'+text+'</div>' : '')+'</div>'
+        );
+      } else {
+        items.push(
+          '<div class="cmt"><div class="cmeta"><span class="name">'+name+'</span> '+
+          '<span class="date">'+date+'</span> '+
+          (c.rating>0 ? heartsHtml(c.rating) : '')+'</div>'+
+          (text ? '<div class="ctext">'+text+'</div>' : '')+'</div>'
+        );
+      }
     });
     const avg = n ? (sum/n) : 0;
+    const avgStr = avg.toFixed(1).replace(".",",");
+    const title = escapeHtml(b.title||"Sans titre");
+    const author = b.author ? escapeHtml(b.author) : "";
     const url = b.coverUrl || "";
-    const cover = url
-      ? (forWord
-          ? '<img src="'+escapeHtml(url)+'" width="96" height="144" style="width:96px;height:144px" alt="">'
-          : '<img src="'+escapeHtml(url)+'" width="118" alt="" referrerpolicy="no-referrer">')
-      : '<div class="nocover">&#10022;</div>';
-    sections.push(
-      '<table class="book" cellspacing="0" cellpadding="0"><tr>'+
-        '<td class="cover-cell" width="148" valign="top">'+cover+'</td>'+
-        '<td class="content-cell" valign="top">'+
-          '<h2>'+escapeHtml(b.title||"Sans titre")+'</h2>'+
-          (b.author ? '<div class="author">'+escapeHtml(b.author)+'</div>' : '')+
-          (n ? '<div class="avg">'+heartsHtml(Math.round(avg))+' <span class="avgnum">'+avg.toFixed(1).replace(".",",")+' / 5</span> <span class="avgcnt">&middot; '+n+' note'+(n>1?'s':'')+'</span></div>' : '')+
-          items.join("")+
-        '</td>'+
-      '</tr></table>'
-    );
+
+    if (forWord){
+      const cover = url
+        ? '<img src="'+escapeHtml(url)+'" width="96" height="144" style="width:96px;height:144px;" alt="">'
+        : '<div style="width:96px;height:144px;background:#ece3d3;"></div>';
+      sections.push(
+        '<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 16px;"><tr>'+
+          '<td width="120" valign="top" style="padding:6px 24px 20px 0;border-bottom:1px solid #e8e2d6;">'+cover+'</td>'+
+          '<td valign="top" style="padding:6px 0 20px;border-bottom:1px solid #e8e2d6;font-family:Georgia,\'Times New Roman\',serif;">'+
+            '<div style="font-size:21px;font-weight:bold;color:#201e1a;">'+title+'</div>'+
+            (author ? '<div style="font-style:italic;color:#5d574c;margin:4px 0 14px;">'+author+'</div>' : '<div style="margin-bottom:12px;"></div>')+
+            (n ? '<div style="margin:0 0 18px;">'+heartsHtml(Math.round(avg), true)+' <span style="font-weight:bold;color:#201e1a;">'+avgStr+' / 5</span> <span style="color:#938b7c;">&middot; '+n+' note'+(n>1?'s':'')+'</span></div>' : '')+
+            items.join("")+
+          '</td>'+
+        '</tr></table>'
+      );
+    } else {
+      const cover = url
+        ? '<img src="'+escapeHtml(url)+'" width="118" alt="" referrerpolicy="no-referrer">'
+        : '<div class="nocover">&#10022;</div>';
+      sections.push(
+        '<table class="book" cellspacing="0" cellpadding="0"><tr>'+
+          '<td class="cover-cell" width="148" valign="top">'+cover+'</td>'+
+          '<td class="content-cell" valign="top">'+
+            '<h2>'+title+'</h2>'+
+            (author ? '<div class="author">'+author+'</div>' : '')+
+            (n ? '<div class="avg">'+heartsHtml(Math.round(avg))+' <span class="avgnum">'+avgStr+' / 5</span> <span class="avgcnt">&middot; '+n+' note'+(n>1?'s':'')+'</span></div>' : '')+
+            items.join("")+
+          '</td>'+
+        '</tr></table>'
+      );
+    }
   }
   return { sections, totalComments };
 }
 
-function reportHeader(totalComments, count){
+function reportHeader(totalComments, count, inline){
   const today = new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric"}).format(new Date());
-  return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">Export du '+today+' &middot; '+totalComments+' avis sur '+count+' livre'+(count>1?'s':'')+'</div></header>';
+  const meta = 'Export du '+today+' &middot; '+totalComments+' avis sur '+count+' livre'+(count>1?'s':'');
+  if (inline){
+    return '<div style="text-align:center;border-bottom:1px solid #e8e2d6;padding-bottom:18px;margin-bottom:28px;font-family:Georgia,\'Times New Roman\',serif;">'+
+      '<div style="font-size:30px;font-weight:bold;color:#201e1a;"><span style="color:#c0563b;">Servo</span>lec &mdash; Avis de lecture</div>'+
+      '<div style="color:#5d574c;margin-top:6px;font-size:14px;">'+meta+'</div></div>';
+  }
+  return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">'+meta+'</div></header>';
 }
 function styledDoc(sections, totalComments){
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1087,14 +1128,13 @@ function styledDoc(sections, totalComments){
 <style>${REPORT_CSS}</style></head>
 <body><div class="page">${reportHeader(totalComments, sections.length)}
 ${sections.join("\n")}
-<footer class="rep">Document g&eacute;n&eacute;r&eacute; depuis l'application Servolec.</footer>
 </div></body></html>`;
 }
 function wordDoc(sections, totalComments){
   return `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head><meta charset="utf-8"><title>Servolec - Avis de lecture</title><style>${REPORT_CSS}</style></head>
-<body><div class="page">${reportHeader(totalComments, sections.length)}
-${sections.join("\n")}</div></body></html>`;
+<head><meta charset="utf-8"><title>Servolec - Avis de lecture</title></head>
+<body style="font-family:Georgia,'Times New Roman',serif;color:#201e1a;">${reportHeader(totalComments, sections.length, true)}
+${sections.join("\n")}</body></html>`;
 }
 function downloadBlob(content, type, filename){
   const blob = new Blob([content], { type });
