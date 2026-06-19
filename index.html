@@ -770,10 +770,9 @@ function renderComments(wrap, bookId, snap){
     if (mine || isAdmin){
       head.append(el("button",{class:"btn tiny ghost del", onclick:()=>removeComment(bookId, d.id)},"supprimer"));
     }
-    if (c.rating > 0)
-      row.append(head, el("div",{class:"comment-stars"}, starsNode(c.rating)), el("div",{class:"text"}, c.text || ""));
-    else
-      row.append(head, el("div",{class:"text"}, c.text || ""));
+    row.append(head);
+    if (c.rating > 0) row.append(el("div",{class:"comment-stars"}, starsNode(c.rating)));
+    if (c.text) row.append(el("div",{class:"text"}, c.text));
     wrap.append(row);
   });
 }
@@ -803,7 +802,7 @@ function commentForm(bookId){
   form.append(
     el("div",{class:"field"},[el("label",{},"Nom"), nameI]),
     el("div",{class:"field"},[el("label",{},"Note (facultatif)"), picker]),
-    el("div",{class:"field"},[el("label",{},"Commentaire"), textI]),
+    el("div",{class:"field"},[el("label",{},"Commentaire (facultatif)"), textI]),
     el("div",{class:"row"},[
       el("span",{class:"hint"},"Visible par tout le groupe Servolec."),
       el("button",{class:"btn primary", onclick:send},"Publier")
@@ -813,7 +812,7 @@ function commentForm(bookId){
   async function send(){
     const name = nameI.value.trim();
     const text = textI.value.trim();
-    if (!text){ toast("Écrivez d'abord un commentaire."); textI.focus(); return; }
+    if (!text && !(rating > 0)){ toast("Mettez au moins un cœur ou un commentaire."); return; }
     if (!me){ toast("Connexion en cours, réessayez."); return; }
     const btn = form.querySelector(".btn.primary");
     btn.disabled = true; btn.textContent = "Publication…";
@@ -1022,7 +1021,7 @@ async function exportComments(){
           '<li><div class="cmeta"><span class="name">'+escapeHtml(c.name||"Anonyme")+'</span>'+
           '<span class="date">'+escapeHtml(fmtDate(c.createdAt))+'</span>'+
           (c.rating>0 ? heartsHtml(c.rating) : '')+'</div>'+
-          '<p>'+escapeHtml(c.text||"").replace(/\n/g,"<br>")+'</p></li>'
+          (c.text ? '<p>'+escapeHtml(c.text).replace(/\n/g,"<br>")+'</p>' : '')+'</li>'
         );
       });
       const avg = n ? (sum/n) : 0;
