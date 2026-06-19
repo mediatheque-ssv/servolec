@@ -1122,15 +1122,16 @@ function reportHeader(totalComments, count, inline){
 }
 function styledDoc(sections, totalComments, booklet){
   const bookletCss = booklet ? `
-@page{ size:A5; margin:12mm; }
-.page{ max-width:none; padding:0; }
-header.rep{ margin-bottom:20px; padding-bottom:16px; }
+@page{ size:A4 landscape; margin:14mm; }
+.page{ max-width:none; padding:0; column-count:2; column-gap:20mm; }
+header.rep{ column-span:all; margin-bottom:18px; padding-bottom:14px; }
 header.rep h1{ font-size:26px; }
-table.book td{ padding:14px 0; }
-td.cover-cell{ width:118px; padding-right:18px; }
-td.cover-cell img{ width:90px; }
-h2{ font-size:18px; }
-.cmt{ padding:8px 0; }` : '';
+table.book{ break-inside:avoid; margin:0 0 10px; }
+table.book td{ padding:12px 0; }
+td.cover-cell{ width:96px; padding-right:14px; }
+td.cover-cell img{ width:78px; }
+h2{ font-size:17px; }
+.cmt{ padding:7px 0; }` : '';
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Servolec &mdash; Avis de lecture</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1171,7 +1172,7 @@ async function exportAs(format){
       w.document.open(); w.document.write(styledDoc(sections, totalComments, format === "booklet")); w.document.close();
       w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 700);
       toast(format === "booklet"
-        ? "À l'impression, choisissez « Livret » et le recto-verso."
+        ? "Imprimez en paysage, recto-verso, puis pliez en deux."
         : "Dans la fenêtre d'impression, choisissez « Enregistrer en PDF ».");
     }
   }catch(e){
@@ -1185,7 +1186,7 @@ function openExportChooser(){
     el("p",{class:"sub"},"Choisissez le format du document."),
     el("div",{class:"export-choices"},[
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('pdf'); }},"PDF (à enregistrer / imprimer)"),
-      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret (A4 plié en 2)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret (A4 paysage, à plier)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word'); }},"Word (.doc)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('html'); }},"Page web (.html)")
     ]),
