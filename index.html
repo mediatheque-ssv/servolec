@@ -1121,17 +1121,30 @@ function reportHeader(totalComments, count, inline){
   return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">'+meta+'</div></header>';
 }
 function styledDoc(sections, totalComments, booklet){
-  const pageCss = booklet ? `
-@page{ size:A4 landscape; margin:14mm; }
-.page{ max-width:none; padding:0; column-count:2; column-gap:20mm; column-fill:auto; }
-header.rep{ column-span:all; margin-bottom:18px; padding-bottom:14px; }
+  let pageCss = `@page{ size:A4 portrait; }`;
+  if (booklet){
+    // densité auto selon la quantité de contenu : peu -> aéré, beaucoup -> resserré
+    const units = sections.length + totalComments;
+    const P = units <= 12
+      ? { m:16, gap:24, bmb:20, td:18, cmt:11, h2:18, cw:104, iw:84, amb:9, avgmb:14, ct:4 }
+      : units <= 28
+      ? { m:13, gap:18, bmb:14, td:14, cmt:9,  h2:17, cw:96,  iw:80, amb:7, avgmb:11, ct:3 }
+      : { m:10, gap:13, bmb:8,  td:10, cmt:6,  h2:16, cw:88,  iw:74, amb:5, avgmb:8,  ct:2 };
+    pageCss = `
+@page{ size:A4 landscape; margin:${P.m}mm; }
+.page{ max-width:none; padding:0; column-count:2; column-gap:${P.gap}mm; column-fill:auto; }
+header.rep{ column-span:all; margin-bottom:20px; padding-bottom:14px; }
 header.rep h1{ font-size:26px; }
-table.book{ break-inside:avoid; margin:0 0 10px; }
-table.book td{ padding:12px 0; }
-td.cover-cell{ width:96px; padding-right:14px; }
-td.cover-cell img{ width:78px; }
-h2{ font-size:17px; }
-.cmt{ padding:7px 0; }` : `@page{ size:A4 portrait; }`;
+table.book{ break-inside:avoid; margin:0 0 ${P.bmb}px; }
+table.book td{ padding:${P.td}px 0; }
+td.cover-cell{ width:${P.cw}px; padding-right:14px; }
+td.cover-cell img{ width:${P.iw}px; }
+h2{ font-size:${P.h2}px; }
+.author{ margin-bottom:${P.amb}px; }
+.avg{ margin-bottom:${P.avgmb}px; }
+.cmt{ padding:${P.cmt}px 0; }
+.ctext{ margin-top:${P.ct}px; }`;
+  }
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Servolec &mdash; Avis de lecture</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
