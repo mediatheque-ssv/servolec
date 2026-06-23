@@ -1067,12 +1067,28 @@ async function urlToDataUri(url){
 
 async function gatherReport(forWord){
   const booksSnap = await getDocs(query(collection(db,"books"), orderBy("createdAt","desc")));
+  const docs = booksSnap.docs;
+
+  // commentaires de tous les livres, en parallèle
+  const commentSnaps = await Promise.all(docs.map(bk =>
+    getDocs(query(collection(db,"books",bk.id,"comments"), orderBy("createdAt","asc")))
+  ));
+
+  // couvertures intégrées (Word) : toutes en parallèle
+  const coverMap = new Map();
+  if (forWord){
+    await Promise.all(docs.map(async bk => {
+      const u = bk.data().coverUrl;
+      if (u){ const d = await urlToDataUri(u); if (d) coverMap.set(u, d); }
+    }));
+  }
+
   const sections = [];
   let totalComments = 0;
-  for (const bk of booksSnap.docs){
+  docs.forEach((bk, idx) => {
     const b = bk.data();
-    const cSnap = await getDocs(query(collection(db,"books",bk.id,"comments"), orderBy("createdAt","asc")));
-    if (cSnap.empty) continue;
+    const cSnap = commentSnaps[idx];
+    if (cSnap.empty) return;
     let sum = 0, n = 0;
     const items = [];
     cSnap.forEach(cd => {
@@ -1106,8 +1122,7 @@ async function gatherReport(forWord){
     const url = b.coverUrl || "";
 
     if (forWord){
-      let coverSrc = url;
-      if (url){ const d = await urlToDataUri(url); if (d) coverSrc = d; }
+      const coverSrc = (url && coverMap.get(url)) || url;
       const cover = coverSrc
         ? '<img src="'+escapeHtml(coverSrc)+'" width="96" alt="">'
         : '<div style="width:96px;height:144px;background:#ece3d3;"></div>';
@@ -1138,7 +1153,7 @@ async function gatherReport(forWord){
         '</tr></table>'
       );
     }
-  }
+  });
   return { sections, totalComments };
 }
 
@@ -1178,8 +1193,10 @@ h2{ font-size:${P.h2}px; }
 <title>Servolec &mdash; Avis de lecture</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
-<style>${REPORT_CSS}${pageCss}</style></head>
-<body><div class="page">${reportHeader(totalComments, sections.length)}
+<style>${REPORT_CSS}${pageCss}
+@media print{ .no-print{ display:none !important; } }</style></head>
+<body>${booklet ? "" : '<button class="no-print" onclick="window.print()" style="position:fixed;top:16px;right:16px;z-index:99;padding:10px 18px;background:#c0563b;color:#fff;border:none;border-radius:8px;font:600 14px/1 \'Hanken Grotesk\',system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px rgba(32,30,26,.2);">Imprimer</button>'}
+<div class="page">${reportHeader(totalComments, sections.length)}
 ${sections.join("\n")}
 </div></body></html>`;
 }
