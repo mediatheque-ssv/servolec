@@ -1035,6 +1035,36 @@ h2{font-family:"Fraunces",Georgia,serif;font-weight:560;font-size:22px;margin:0 
 footer.rep{text-align:center;color:var(--faint);font-size:12.5px;margin-top:28px;}
 @media print{ body{background:#fff;} table.book{break-inside:avoid;box-shadow:none;} .page{padding:0;max-width:none;} }`;
 
+function guessMime(url){
+  const u = (url||"").toLowerCase();
+  if (u.includes(".png")) return "image/png";
+  if (u.includes(".gif")) return "image/gif";
+  if (u.includes(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+async function urlToDataUri(url){
+  const proxies = [
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`
+  ];
+  for (const make of proxies){
+    try{
+      const r = await fetch(make(url));
+      if (!r.ok) continue;
+      let blob = await r.blob();
+      if (!blob || blob.size < 100) continue;
+      if (!/^image\//.test(blob.type)) blob = new Blob([blob], { type: guessMime(url) });
+      return await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(blob);
+      });
+    }catch(_){ /* relais suivant */ }
+  }
+  return null;
+}
+
 async function gatherReport(forWord){
   const booksSnap = await getDocs(query(collection(db,"books"), orderBy("createdAt","desc")));
   const sections = [];
@@ -1076,8 +1106,10 @@ async function gatherReport(forWord){
     const url = b.coverUrl || "";
 
     if (forWord){
-      const cover = url
-        ? '<img src="'+escapeHtml(url)+'" width="96" height="144" style="width:96px;height:144px;" alt="">'
+      let coverSrc = url;
+      if (url){ const d = await urlToDataUri(url); if (d) coverSrc = d; }
+      const cover = coverSrc
+        ? '<img src="'+escapeHtml(coverSrc)+'" width="96" alt="">'
         : '<div style="width:96px;height:144px;background:#ece3d3;"></div>';
       sections.push(
         '<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 16px;"><tr>'+
