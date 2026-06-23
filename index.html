@@ -1234,13 +1234,13 @@ function wordDoc(sections, totalComments, booklet){
 <body style="font-family:Georgia,'Times New Roman',serif;color:#201e1a;">${header}
 ${sections.join("\n")}</body></html>`;
 }
-async function gatherBookmarks(){
+async function gatherBookmarkData(){
   const booksSnap = await getDocs(query(collection(db,"books"), orderBy("createdAt","desc")));
   const docs = booksSnap.docs;
   const commentSnaps = await Promise.all(docs.map(bk =>
     getDocs(query(collection(db,"books",bk.id,"comments"), orderBy("createdAt","asc")))
   ));
-  const cards = [];
+  const books = [];
   docs.forEach((bk, idx) => {
     const b = bk.data();
     const cSnap = commentSnaps[idx];
@@ -1250,46 +1250,75 @@ async function gatherBookmarks(){
       const c = cd.data();
       const name = escapeHtml(c.name||"Anonyme");
       const text = c.text ? escapeHtml(c.text).replace(/\n/g,"<br>") : "";
-      items.push(
+      const html =
         '<div class="bm-cmt">'+
           '<div class="bm-cmeta">'+name+(c.rating>0 ? ' '+heartsHtml(c.rating, true) : '')+'</div>'+
           (text ? '<div class="bm-ctext">'+text+'</div>' : '')+
-        '</div>'
-      );
+        '</div>';
+      const weight = 1 + Math.ceil((c.text ? c.text.length : 0) / 90);
+      items.push({ html, weight });
     });
-    cards.push(
-      '<div class="bookmark">'+
-        '<div class="bm-head">'+
-          '<div class="bm-title">'+escapeHtml(b.title||"Sans titre")+'</div>'+
-          '<div class="bm-brand">Avis du Servolec BD</div>'+
-        '</div>'+
-        '<div class="bm-body">'+items.join("")+'</div>'+
-      '</div>'
-    );
+    books.push({ title: escapeHtml(b.title||"Sans titre"), items });
   });
-  return cards;
+  return books;
 }
-function bookmarkDoc(cards){
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Servolec &mdash; Marque-pages</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
-<style>
+function bmHead(title, suite){
+  return '<div class="bm-head">'+
+    '<div class="bm-brand">Avis du Servolec BD</div>'+
+    '<div class="bm-title">'+title+(suite ? ' &mdash; suite' : '')+'</div>'+
+  '</div>';
+}
+function bmCard(title, itemsHtml, suite){
+  return '<div class="bookmark">'+bmHead(title, suite)+'<div class="bm-body">'+itemsHtml+'</div></div>';
+}
+const BOOKMARK_CSS = `
 @page{ size:A4 portrait; margin:9mm; }
 *{ box-sizing:border-box; }
 body{ margin:0; font-family:'Hanken Grotesk',system-ui,sans-serif; color:#201e1a; }
 .sheet{ display:flex; flex-wrap:wrap; gap:6mm; align-content:flex-start; }
-.bookmark{ width:56mm; min-height:190mm; border:1px dashed #b0a690; border-radius:4mm; padding:7mm 5mm; display:flex; flex-direction:column; break-inside:avoid; }
+.sheet.page{ break-after:page; }
+.bookmark{ width:56mm; min-height:190mm; border:1px dashed #b0a690; padding:7mm 5mm; display:flex; flex-direction:column; break-inside:avoid; }
+.bookmark.empty{ border:none; }
 .bm-head{ text-align:center; border-bottom:1px solid #e8e2d6; padding-bottom:4mm; margin-bottom:4mm; }
-.bm-title{ font-family:'Fraunces',Georgia,serif; font-size:14pt; font-weight:600; line-height:1.15; }
-.bm-brand{ font-size:8pt; letter-spacing:.05em; text-transform:uppercase; color:#c0563b; margin-top:2.5mm; }
+.bm-brand{ font-family:'Fraunces',Georgia,serif; font-size:15pt; font-weight:600; line-height:1.1; color:#c0563b; }
+.bm-title{ font-size:8.5pt; font-style:italic; color:#5d574c; margin-top:2.5mm; line-height:1.2; }
 .bm-body{ font-size:9pt; line-height:1.4; }
 .bm-cmt{ margin-bottom:3.5mm; }
 .bm-cmeta{ font-weight:700; }
 .bm-cmeta .hearts span{ font-size:9pt; }
-.bm-ctext{ color:#403b32; margin-top:.5mm; }
-</style></head>
-<body><div class="sheet">${cards.join("")}</div></body></html>`;
+.bm-ctext{ color:#403b32; margin-top:.5mm; }`;
+function bookmarkShell(inner){
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Servolec &mdash; Marque-pages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
+<style>${BOOKMARK_CSS}</style></head>
+<body>${inner}</body></html>`;
+}
+function bookmarkDoc(books){
+  const cards = books.map(bk => bmCard(bk.title, bk.items.map(i=>i.html).join(""), false));
+  return bookmarkShell('<div class="sheet">'+cards.join("")+'</div>');
+}
+function bookmarkDocDuplex(books){
+  const PER = 3, BUDGET = 16;
+  const fronts = [], backs = [];
+  books.forEach(bk => {
+    let acc = 0; const f = [], b = [];
+    bk.items.forEach(it => {
+      if (b.length === 0 && (acc + it.weight <= BUDGET || f.length === 0)){ f.push(it.html); acc += it.weight; }
+      else b.push(it.html);
+    });
+    fronts.push(bmCard(bk.title, f.join(""), false));
+    backs.push(b.length ? bmCard(bk.title, b.join(""), true) : '<div class="bookmark empty"></div>');
+  });
+  let pages = "";
+  for (let i = 0; i < fronts.length; i += PER){
+    const f = fronts.slice(i, i+PER);
+    const b = backs.slice(i, i+PER).slice().reverse(); // miroir pour reliure bord long
+    pages += '<div class="sheet page">'+f.join("")+'</div>';
+    pages += '<div class="sheet page">'+b.join("")+'</div>';
+  }
+  return bookmarkShell(pages);
 }
 function downloadBlob(content, type, filename){
   const blob = new Blob([content], { type });
@@ -1303,14 +1332,15 @@ async function exportAs(format){
   const overlay = showLoading(wordFmt ? "Préparation du Word (récupération des couvertures)…" : "Préparation du document…");
   try{
     const date = todayStr();
-    if (format === "bookmark"){
-      const cards = await gatherBookmarks();
-      if (!cards.length){ toast("Aucun avis à exporter."); return; }
+    if (format === "bookmark" || format === "bookmark-duplex"){
+      const books = await gatherBookmarkData();
+      if (!books.length){ toast("Aucun avis à exporter."); return; }
+      const duplex = (format === "bookmark-duplex");
       const w = window.open("", "_blank");
       if (!w){ toast("Autorisez les fenêtres pop-up pour générer les marque-pages."); return; }
-      w.document.open(); w.document.write(bookmarkDoc(cards)); w.document.close();
+      w.document.open(); w.document.write(duplex ? bookmarkDocDuplex(books) : bookmarkDoc(books)); w.document.close();
       w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 700);
-      toast("Marque-pages prêts : imprimez puis découpez.");
+      toast(duplex ? "Imprimez recto-verso (reliure bord long), puis découpez." : "Marque-pages prêts : imprimez puis découpez.");
       return;
     }
     const { sections, totalComments } = await gatherReport(wordFmt);
@@ -1343,6 +1373,7 @@ function openExportChooser(){
     el("div",{class:"export-choices"},[
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret PDF (paysage)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('bookmark'); }},"Marque-pages (à découper)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('bookmark-duplex'); }},"Marque-pages recto-verso"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word'); }},"Word (.doc)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word-booklet'); }},"Livret Word (paysage)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('html'); }},"Page web (.html)")
