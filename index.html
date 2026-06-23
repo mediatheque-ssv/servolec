@@ -1234,6 +1234,63 @@ function wordDoc(sections, totalComments, booklet){
 <body style="font-family:Georgia,'Times New Roman',serif;color:#201e1a;">${header}
 ${sections.join("\n")}</body></html>`;
 }
+async function gatherBookmarks(){
+  const booksSnap = await getDocs(query(collection(db,"books"), orderBy("createdAt","desc")));
+  const docs = booksSnap.docs;
+  const commentSnaps = await Promise.all(docs.map(bk =>
+    getDocs(query(collection(db,"books",bk.id,"comments"), orderBy("createdAt","asc")))
+  ));
+  const cards = [];
+  docs.forEach((bk, idx) => {
+    const b = bk.data();
+    const cSnap = commentSnaps[idx];
+    if (cSnap.empty) return;
+    const items = [];
+    cSnap.forEach(cd => {
+      const c = cd.data();
+      const name = escapeHtml(c.name||"Anonyme");
+      const text = c.text ? escapeHtml(c.text).replace(/\n/g,"<br>") : "";
+      items.push(
+        '<div class="bm-cmt">'+
+          '<div class="bm-cmeta">'+name+(c.rating>0 ? ' '+heartsHtml(c.rating, true) : '')+'</div>'+
+          (text ? '<div class="bm-ctext">'+text+'</div>' : '')+
+        '</div>'
+      );
+    });
+    cards.push(
+      '<div class="bookmark">'+
+        '<div class="bm-head">'+
+          '<div class="bm-title">'+escapeHtml(b.title||"Sans titre")+'</div>'+
+          '<div class="bm-brand">Avis du Servolec BD</div>'+
+        '</div>'+
+        '<div class="bm-body">'+items.join("")+'</div>'+
+      '</div>'
+    );
+  });
+  return cards;
+}
+function bookmarkDoc(cards){
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Servolec &mdash; Marque-pages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
+<style>
+@page{ size:A4 portrait; margin:9mm; }
+*{ box-sizing:border-box; }
+body{ margin:0; font-family:'Hanken Grotesk',system-ui,sans-serif; color:#201e1a; }
+.sheet{ display:flex; flex-wrap:wrap; gap:6mm; align-content:flex-start; }
+.bookmark{ width:56mm; min-height:190mm; border:1px dashed #b0a690; border-radius:4mm; padding:7mm 5mm; display:flex; flex-direction:column; break-inside:avoid; }
+.bm-head{ text-align:center; border-bottom:1px solid #e8e2d6; padding-bottom:4mm; margin-bottom:4mm; }
+.bm-title{ font-family:'Fraunces',Georgia,serif; font-size:14pt; font-weight:600; line-height:1.15; }
+.bm-brand{ font-size:8pt; letter-spacing:.05em; text-transform:uppercase; color:#c0563b; margin-top:2.5mm; }
+.bm-body{ font-size:9pt; line-height:1.4; }
+.bm-cmt{ margin-bottom:3.5mm; }
+.bm-cmeta{ font-weight:700; }
+.bm-cmeta .hearts span{ font-size:9pt; }
+.bm-ctext{ color:#403b32; margin-top:.5mm; }
+</style></head>
+<body><div class="sheet">${cards.join("")}</div></body></html>`;
+}
 function downloadBlob(content, type, filename){
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -1245,9 +1302,19 @@ async function exportAs(format){
   const wordFmt = (format === "word" || format === "word-booklet");
   const overlay = showLoading(wordFmt ? "Préparation du Word (récupération des couvertures)…" : "Préparation du document…");
   try{
+    const date = todayStr();
+    if (format === "bookmark"){
+      const cards = await gatherBookmarks();
+      if (!cards.length){ toast("Aucun avis à exporter."); return; }
+      const w = window.open("", "_blank");
+      if (!w){ toast("Autorisez les fenêtres pop-up pour générer les marque-pages."); return; }
+      w.document.open(); w.document.write(bookmarkDoc(cards)); w.document.close();
+      w.onload = () => setTimeout(() => { w.focus(); w.print(); }, 700);
+      toast("Marque-pages prêts : imprimez puis découpez.");
+      return;
+    }
     const { sections, totalComments } = await gatherReport(wordFmt);
     if (!sections.length){ toast("Aucun avis à exporter."); return; }
-    const date = todayStr();
     if (format === "html"){
       downloadBlob(styledDoc(sections, totalComments), "text/html;charset=utf-8", "servolec-avis-"+date+".html");
       toast(totalComments+" avis exportés.");
@@ -1275,6 +1342,7 @@ function openExportChooser(){
     el("p",{class:"sub"},"Choisissez le format du document."),
     el("div",{class:"export-choices"},[
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret PDF (paysage)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('bookmark'); }},"Marque-pages (à découper)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word'); }},"Word (.doc)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word-booklet'); }},"Livret Word (paysage)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('html'); }},"Page web (.html)")
