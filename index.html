@@ -1111,14 +1111,11 @@ async function gatherReport(forWord){
 }
 
 function reportHeader(totalComments, count, inline){
-  const today = new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric"}).format(new Date());
-  const meta = 'Export du '+today+' &middot; '+totalComments+' avis sur '+count+' livre'+(count>1?'s':'');
   if (inline){
     return '<div style="text-align:center;border-bottom:1px solid #e8e2d6;padding-bottom:18px;margin-bottom:28px;font-family:Georgia,\'Times New Roman\',serif;">'+
-      '<div style="font-size:30px;font-weight:bold;color:#201e1a;"><span style="color:#c0563b;">Servo</span>lec &mdash; Avis de lecture</div>'+
-      '<div style="color:#5d574c;margin-top:6px;font-size:14px;">'+meta+'</div></div>';
+      '<div style="font-size:30px;font-weight:bold;color:#201e1a;"><span style="color:#c0563b;">Servo</span>lec &mdash; Avis de lecture</div></div>';
   }
-  return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1><div class="meta">'+meta+'</div></header>';
+  return '<header class="rep"><h1><b>Servo</b>lec &mdash; Avis de lecture</h1></header>';
 }
 function styledDoc(sections, totalComments, booklet){
   let pageCss = `@page{ size:A4 portrait; }`;
@@ -1157,20 +1154,17 @@ ${sections.join("\n")}
 function wordDoc(sections, totalComments, booklet){
   const header = reportHeader(totalComments, sections.length, true);
   if (booklet){
-    let rows = "";
-    for (let i = 0; i < sections.length; i += 2){
-      const leftCell  = sections[i];
-      const rightCell = sections[i+1] || "";
-      rows += '<tr>'+
-        '<td width="50%" valign="top" style="padding:0 18px 0 0;">'+leftCell+'</td>'+
-        '<td width="50%" valign="top" style="padding:0 0 0 18px;">'+rightCell+'</td>'+
-        '</tr>';
-    }
+    const half = Math.ceil(sections.length / 2);
+    const left = sections.slice(0, half).join("\n");
+    const right = sections.slice(half).join("\n");
     return `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset="utf-8"><title>Servolec - Avis de lecture</title>
 <style>@page Section1 { size:841.9pt 595.3pt; mso-page-orientation:landscape; margin:1.4cm; } div.Section1{ page:Section1; }</style></head>
 <body style="font-family:Georgia,'Times New Roman',serif;color:#201e1a;"><div class="Section1">${header}
-<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">${rows}</table>
+<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><tr>
+<td width="50%" valign="top" style="padding:0 18px 0 0;">${left}</td>
+<td width="50%" valign="top" style="padding:0 0 0 18px;">${right}</td>
+</tr></table>
 </div></body></html>`;
   }
   return `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -1216,7 +1210,7 @@ function openExportChooser(){
     el("h2",{},"Exporter les avis"),
     el("p",{class:"sub"},"Choisissez le format du document."),
     el("div",{class:"export-choices"},[
-      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret (paysage, à imprimer)"),
+      el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('booklet'); }},"Livret PDF (paysage)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word'); }},"Word (.doc)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('word-booklet'); }},"Livret Word (paysage)"),
       el("button",{class:"btn", onclick:()=>{ bg.remove(); exportAs('html'); }},"Page web (.html)")
