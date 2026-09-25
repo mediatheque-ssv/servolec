@@ -163,6 +163,10 @@ main{ max-width:1180px; margin:0 auto; padding:14px 24px 96px; }
 .book .meta .t{ font-family:var(--display); font-weight:560; font-size:17px; line-height:1.22; letter-spacing:-.01em; }
 .book .meta .a{ color:var(--ink-soft); font-size:14px; margin-top:2px; }
 .book .meta .c{ color:var(--accent); font-size:13px; font-weight:600; margin-top:7px; }
+.book .meta .rt{ display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:7px; font-size:13px; color:var(--ink-soft); min-height:18px; }
+.book .meta .rt .stars{ font-size:14px; }
+.book .meta .rt .rn{ font-weight:700; color:var(--ink); }
+.book .meta .rt.none{ color:var(--ink-faint); font-style:italic; }
 
 /* carte « ajouter » */
 .add-card{
@@ -530,11 +534,12 @@ function renderHome(){
   grid.append(el("div",{class:"center-state", style:"grid-column:1/-1"},[el("div",{class:"spinner"}),"Chargement des couvertures…"]));
 
   const cards = new Map();   // id -> { card, data }
+  const ratingSubs = new Map(); // id -> désabonnement des avis
   let addCard = null;
   let first = true;
 
   const qy = query(collection(db,"books"), orderBy("createdAt","desc"));
-  unsubscribe = onSnapshot(qy, snap => {
+  const unsubBooks = onSnapshot(qy, snap => {
     if (first){ grid.innerHTML = ""; first = false; }
 
     if (snap.empty && !isAdmin){
@@ -564,6 +569,9 @@ function renderHome(){
       if (!entry){
         entry = { card: bookCard(id, b, i), data: b };
         cards.set(id, entry);
+        const rt = entry.card.querySelector(".meta .rt");
+        ratingSubs.set(id, onSnapshot(collection(db,"books",id,"comments"),
+          cs => paintRating(rt, cs), e => console.error(e)));
       } else {
         updateCard(entry.card, id, b, entry.data);
         entry.data = b;
@@ -573,7 +581,10 @@ function renderHome(){
     });
 
     for (const [id, entry] of cards){
-      if (!seen.has(id)){ entry.card.remove(); cards.delete(id); }
+      if (!seen.has(id)){
+        entry.card.remove(); cards.delete(id);
+        const u = ratingSubs.get(id); if (u){ u(); ratingSubs.delete(id); }
+      }
     }
     // Réconciliation minimale : on ne déplace un nœud que si son ordre a changé.
     // En cas de simple bascule de statut, l'ordre est identique => aucune
@@ -589,6 +600,27 @@ function renderHome(){
       "Impossible de charger la bibliothèque. Vérifiez la configuration / les règles Firestore."));
     console.error(err);
   });
+  unsubscribe = () => { unsubBooks(); ratingSubs.forEach(u => u()); ratingSubs.clear(); };
+}
+
+/* Note moyenne (cœurs) + nombre d'avis sous la couverture */
+function paintRating(rt, cs){
+  if (!rt) return;
+  let sum = 0, n = 0;
+  cs.forEach(d => { const r = d.data().rating; if (r > 0){ sum += r; n++; } });
+  const total = cs.size;
+  rt.innerHTML = "";
+  if (!total){ rt.className = "rt none"; rt.textContent = "Aucun avis"; return; }
+  rt.className = "rt";
+  const cnt = total + " avis";
+  if (n){
+    const avg = sum / n;
+    rt.append(starsNode(Math.round(avg)),
+      el("span",{class:"rn"}, avg.toFixed(1).replace(".",",")),
+      el("span",{}, "· " + cnt));
+  } else {
+    rt.append(el("span",{}, cnt));
+  }
 }
 
 /* Met à jour une carte sans recréer la couverture (sauf si le lien a changé). */
@@ -610,7 +642,7 @@ function updateCard(card, id, b, prev){
   const a = card.querySelector(".meta .a");
   if (b.author){
     if (a) a.textContent = b.author;
-    else if (meta) meta.append(el("div",{class:"a"}, b.author));
+    else if (meta) meta.insertBefore(el("div",{class:"a"}, b.author), meta.querySelector(".rt"));
   } else if (a){ a.remove(); }
 }
 
@@ -651,7 +683,8 @@ function bookCard(id, b, i){
   card.append(frame);
   const meta = el("div",{class:"meta"},[
     el("div",{class:"t"}, b.title || "Sans titre"),
-    b.author ? el("div",{class:"a"}, b.author) : null
+    b.author ? el("div",{class:"a"}, b.author) : null,
+    el("div",{class:"rt"})
   ]);
   card.append(meta);
   return card;
